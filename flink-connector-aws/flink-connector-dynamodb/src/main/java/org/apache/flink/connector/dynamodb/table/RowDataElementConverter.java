@@ -27,6 +27,11 @@ import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.DataType;
 
+import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
+
+import java.util.HashMap;
+import java.util.Map;
+
 /**
  * Implementation of an {@link ElementConverter} for the DynamoDb Table sink. The element converter
  * maps the Flink internal type of {@link RowData} to a {@link DynamoDbWriteRequest} to be used by
@@ -51,17 +56,21 @@ public class RowDataElementConverter implements ElementConverter<RowData, Dynamo
                     new RowDataToAttributeValueConverter(physicalDataType);
         }
 
-        DynamoDbWriteRequest.Builder builder =
-                DynamoDbWriteRequest.builder()
-                        .setItem(rowDataToAttributeValueConverter.convertRowData(element));
+        Map<String, AttributeValue> itemMap = rowDataToAttributeValueConverter.convertRowData(element);
+        DynamoDbWriteRequest.Builder builder = DynamoDbWriteRequest.builder().setItem(itemMap);
 
         switch (element.getRowKind()) {
             case INSERT:
             case UPDATE_AFTER:
+                builder.setItem(itemMap);
                 builder.setType(DynamoDbWriteRequestType.PUT);
                 break;
             case DELETE:
+                /* For Delete Requests, we must only send the PK, and not all other fields */
                 builder.setType(DynamoDbWriteRequestType.DELETE);
+                Map<String, AttributeValue> pkOnlyMap = new HashMap<String, AttributeValue>();
+                pkOnlyMap.put("userId", itemMap.get("userId"));
+                builder.setItem(pkOnlyMap);
                 break;
             case UPDATE_BEFORE:
             default:

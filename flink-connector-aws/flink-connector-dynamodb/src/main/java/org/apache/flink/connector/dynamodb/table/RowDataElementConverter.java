@@ -31,6 +31,7 @@ import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Implementation of an {@link ElementConverter} for the DynamoDb Table sink. The element converter
@@ -41,12 +42,14 @@ import java.util.Map;
 public class RowDataElementConverter implements ElementConverter<RowData, DynamoDbWriteRequest> {
 
     private final DataType physicalDataType;
+    private final Set<String> primaryKeys;
     private transient RowDataToAttributeValueConverter rowDataToAttributeValueConverter;
 
-    public RowDataElementConverter(DataType physicalDataType) {
+    public RowDataElementConverter(DataType physicalDataType, Set<String> primaryKeys) {
         this.physicalDataType = physicalDataType;
         this.rowDataToAttributeValueConverter =
                 new RowDataToAttributeValueConverter(physicalDataType);
+        this.primaryKeys = primaryKeys;
     }
 
     @Override
@@ -58,6 +61,8 @@ public class RowDataElementConverter implements ElementConverter<RowData, Dynamo
 
         Map<String, AttributeValue> itemMap = rowDataToAttributeValueConverter.convertRowData(element);
         DynamoDbWriteRequest.Builder builder = DynamoDbWriteRequest.builder().setItem(itemMap);
+        System.out.println("ROB: Primary key is");
+        System.out.println(primaryKeys);
 
         switch (element.getRowKind()) {
             case INSERT:

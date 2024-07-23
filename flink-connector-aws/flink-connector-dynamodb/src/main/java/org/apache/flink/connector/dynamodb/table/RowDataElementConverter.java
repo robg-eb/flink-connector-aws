@@ -27,10 +27,6 @@ import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.types.DataType;
 
-import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
-
-import java.util.HashMap;
-import java.util.Map;
 import java.util.Set;
 
 /**
@@ -47,35 +43,29 @@ public class RowDataElementConverter implements ElementConverter<RowData, Dynamo
 
     public RowDataElementConverter(DataType physicalDataType, Set<String> primaryKeys) {
         this.physicalDataType = physicalDataType;
-        this.rowDataToAttributeValueConverter =
-                new RowDataToAttributeValueConverter(physicalDataType);
         this.primaryKeys = primaryKeys;
+        this.rowDataToAttributeValueConverter =
+                new RowDataToAttributeValueConverter(physicalDataType, primaryKeys);
     }
 
     @Override
     public DynamoDbWriteRequest apply(RowData element, SinkWriter.Context context) {
         if (rowDataToAttributeValueConverter == null) {
             rowDataToAttributeValueConverter =
-                    new RowDataToAttributeValueConverter(physicalDataType);
+                    new RowDataToAttributeValueConverter(physicalDataType, primaryKeys);
         }
 
-        Map<String, AttributeValue> itemMap = rowDataToAttributeValueConverter.convertRowData(element);
-        DynamoDbWriteRequest.Builder builder = DynamoDbWriteRequest.builder().setItem(itemMap);
-        System.out.println("ROB: Primary key is");
-        System.out.println(primaryKeys);
+        DynamoDbWriteRequest.Builder builder =
+                DynamoDbWriteRequest.builder()
+                        .setItem(rowDataToAttributeValueConverter.convertRowData(element));
 
         switch (element.getRowKind()) {
             case INSERT:
             case UPDATE_AFTER:
-                builder.setItem(itemMap);
                 builder.setType(DynamoDbWriteRequestType.PUT);
                 break;
             case DELETE:
-                /* For Delete Requests, we must only send the PK, and not all other fields */
                 builder.setType(DynamoDbWriteRequestType.DELETE);
-                Map<String, AttributeValue> pkOnlyMap = new HashMap<String, AttributeValue>();
-                pkOnlyMap.put("userId", itemMap.get("userId"));
-                builder.setItem(pkOnlyMap);
                 break;
             case UPDATE_BEFORE:
             default:

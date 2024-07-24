@@ -70,13 +70,9 @@ public class RowDataToAttributeValueConverter {
                         AttributeValue value = itemMap.get(key);
                         pkOnlyMap.put(key, value);
                 }
-                System.out.println("ROB: RowDataToAttributeValueConverter.java: convertRowData: DELETE");
-                System.out.println(pkOnlyMap);
                 return pkOnlyMap;
         }
         else {
-                System.out.println("ROB: RowDataToAttributeValueConverter.java: convertRowData: default");
-                System.out.println(itemMap);
                 return itemMap;
         }
 

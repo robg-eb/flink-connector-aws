@@ -59,8 +59,6 @@ public class DynamoDbDynamicSinkFactory extends AsyncDynamicTableSinkFactory {
                                 dynamoDbConfiguration.getSinkClientProperties());
 
         if (catalogTable.getResolvedSchema().getPrimaryKey().isPresent()){
-            System.out.println("ROB: Primary key is present");
-            System.out.println(catalogTable.getResolvedSchema().getPrimaryKey().get().getColumns());
             builder = builder.setPrimaryKeys(new HashSet<>(catalogTable.getResolvedSchema().getPrimaryKey().get().getColumns()));
         }
 

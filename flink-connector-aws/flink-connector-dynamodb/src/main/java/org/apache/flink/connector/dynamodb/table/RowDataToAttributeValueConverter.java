@@ -21,10 +21,12 @@ package org.apache.flink.connector.dynamodb.table;
 import org.apache.flink.annotation.Internal;
 import org.apache.flink.connector.dynamodb.table.converter.ArrayAttributeConverterProvider;
 import org.apache.flink.table.api.DataTypes;
+import org.apache.flink.table.api.TableException;
 import org.apache.flink.table.data.RowData;
 import org.apache.flink.table.data.conversion.DataStructureConverters;
 import org.apache.flink.table.types.DataType;
 import org.apache.flink.table.types.KeyValueDataType;
+import org.apache.flink.types.RowKind;
 
 import software.amazon.awssdk.enhanced.dynamodb.AttributeConverterProvider;
 import software.amazon.awssdk.enhanced.dynamodb.EnhancedType;
@@ -32,10 +34,10 @@ import software.amazon.awssdk.enhanced.dynamodb.TableSchema;
 import software.amazon.awssdk.enhanced.dynamodb.mapper.StaticTableSchema;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.stream.Collectors;
 
 import static org.apache.flink.table.data.RowData.createFieldGetter;
 
@@ -43,32 +45,45 @@ import static org.apache.flink.table.data.RowData.createFieldGetter;
 @Internal
 public class RowDataToAttributeValueConverter {
 
+    private final DataType physicalDataType;
     private final TableSchema<RowData> tableSchema;
-    private final TableSchema<RowData> tableSchemaPKOnly;
+    private final Set<String> primaryKeys;
 
     public RowDataToAttributeValueConverter(DataType physicalDataType, Set<String> primaryKeys) {
-        this.tableSchema = createTableSchema(DataType.getFields(physicalDataType));
-
-        List<DataTypes.Field> pkFields = DataType.getFields(physicalDataType).stream()
-                .filter(f -> primaryKeys.contains(f.getName()))
-                .collect(Collectors.toList());
-        this.tableSchemaPKOnly = createTableSchema(pkFields);
+        this.physicalDataType = physicalDataType;
+        this.primaryKeys = primaryKeys;
+        this.tableSchema = createTableSchema();
     }
 
     public Map<String, AttributeValue> convertRowData(RowData row) {
-        switch (row.getRowKind()) {
-                case DELETE:
-                        System.out.println("ROB: RowDataToAttributeValueConverter.java: convertRowData: DELETE");
-                        System.out.println(tableSchemaPKOnly.itemToMap(row, false));
-                        return tableSchemaPKOnly.itemToMap(row, false);
-                default:
-                        System.out.println("ROB: RowDataToAttributeValueConverter.java: convertRowData: default");
-                        System.out.println(tableSchema.itemToMap(row, false));
-                        return tableSchema.itemToMap(row, false);
+        Map<String, AttributeValue> itemMap = new HashMap<>();
+        itemMap = tableSchema.itemToMap(row, false);
+
+        // In case of DELETE, only the primary key field(s) should be sent in the request
+        // In order to accomplish this, we need PRIMARY KEY fields to have been set in Table definition.
+        if (row.getRowKind() == RowKind.DELETE){
+                if (primaryKeys == null || primaryKeys.isEmpty()) {
+                        throw new TableException("PRIMARY KEY on Table must be set for DynamoDB DELETE operation");
+                }
+                Map<String, AttributeValue> pkOnlyMap = new HashMap<String, AttributeValue>();
+                for (String key : primaryKeys) {
+                        AttributeValue value = itemMap.get(key);
+                        pkOnlyMap.put(key, value);
+                }
+                System.out.println("ROB: RowDataToAttributeValueConverter.java: convertRowData: DELETE");
+                System.out.println(pkOnlyMap);
+                return pkOnlyMap;
         }
+        else {
+                System.out.println("ROB: RowDataToAttributeValueConverter.java: convertRowData: default");
+                System.out.println(itemMap);
+                return itemMap;
+        }
+
     }
 
-    private StaticTableSchema<RowData> createTableSchema(List<DataTypes.Field> fieldsToInclude) {
+    private StaticTableSchema<RowData> createTableSchema() {
+        List<DataTypes.Field> fields = DataType.getFields(physicalDataType);
         StaticTableSchema.Builder<RowData> builder = TableSchema.builder(RowData.class);
 
         AttributeConverterProvider newAttributeConverterProvider =
@@ -76,8 +91,8 @@ public class RowDataToAttributeValueConverter {
         builder.attributeConverterProviders(
                 newAttributeConverterProvider, AttributeConverterProvider.defaultProvider());
 
-        for (int i = 0; i < fieldsToInclude.size(); i++) {
-            DataTypes.Field field = fieldsToInclude.get(i);
+        for (int i = 0; i < fields.size(); i++) {
+            DataTypes.Field field = fields.get(i);
             RowData.FieldGetter fieldGetter =
                     createFieldGetter(field.getDataType().getLogicalType(), i);
 
